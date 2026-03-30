@@ -17,9 +17,6 @@ AI referee tracking and decision classification for rugby union. Combines local 
 ### Decision overlay — knock on detected
 ![Knock on decision](docs/images/decision_knock_on.jpg)
 
-### Decision overlay — scrum awarded
-![Scrum awarded decision](docs/images/decision_scrum.jpg)
-
 ### Referee movement heatmap
 ![Heatmap](docs/images/heatmap.png)
 
