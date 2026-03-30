@@ -116,4 +116,5 @@ uv run python src/merge_output.py output/tracked.mp4 output/decisions.json \
 
 ## Documentation
 
+- [Roadmap](docs/roadmap.md) — planned improvements and future directions
 - [Technical Glossary](docs/glossary.md) — definitions of CV, tracking, and classification terms used in this project
