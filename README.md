@@ -14,8 +14,8 @@ AI referee tracking and decision classification for rugby union. Combines local 
 ### Referee tracking with bounding box and movement trail
 ![Referee tracking](docs/images/tracking.jpg)
 
-### Decision overlay — knock on detected
-![Knock on decision](docs/images/decision_knock_on.jpg)
+### Decision overlay — kick-off detected
+![Kick-off decision](docs/images/decision_kickoff.jpg)
 
 ### Referee movement heatmap
 ![Heatmap](docs/images/heatmap.png)
