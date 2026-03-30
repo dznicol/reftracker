@@ -231,7 +231,7 @@ def track_referee(video_path, output_path, heatmap_path=None, tracking_json_path
     MAX_SPEED_PX_PER_FRAME = 12
     BASE_RADIUS = 80
     REID_GRACE_FRAMES = 5      # Wait this many frames before colour re-ID
-    PRIMARY_COLOUR_MIN = 0.05  # Minimum primary colour ratio to accept track
+    PRIMARY_COLOUR_MIN = 0.20  # Minimum primary colour ratio to accept track
 
     print(f"Calibrating over {num_calibration_frames} frames...")
 
@@ -368,7 +368,52 @@ def track_referee(video_path, output_path, heatmap_path=None, tracking_json_path
                     # ── Continuous colour verification ────────────
                     primary_check = _score_primary(frame, bbox)
                     if primary_check < PRIMARY_COLOUR_MIN:
-                        continue
+                        # Not green — wrong person. Immediately search
+                        # ALL detections for the greenest candidate.
+                        best_green = 0.0
+                        best_green_tid = None
+                        best_green_bbox = None
+                        best_green_conf = None
+                        for otid, obbox, oconf in confirmed:
+                            gs = _score_primary(frame, obbox)
+                            if gs > best_green:
+                                best_green = gs
+                                best_green_tid = otid
+                                best_green_bbox = obbox
+                                best_green_conf = oconf
+                        if best_green >= PRIMARY_COLOUR_MIN and best_green_tid is not None:
+                            ref_track_id = best_green_tid
+                            reid_count += 1
+                            cx = int((best_green_bbox[0] + best_green_bbox[2]) / 2)
+                            cy = int((best_green_bbox[1] + best_green_bbox[3]) / 2)
+                            if reid_count <= 20:
+                                print(f"  Colour-fix: -> Track {ref_track_id} "
+                                      f"(green={best_green:.3f}, frame={frame_idx})")
+                            last_ref_cx = cx
+                            last_ref_cy = cy
+                            trail_positions.append((cx, cy))
+                            ref_positions.append((cx, cy))
+                            tracking_data.append({
+                                "frame": frame_idx,
+                                "timestamp": round(frame_idx / fps, 2),
+                                "x": cx, "y": cy,
+                                "bbox": best_green_bbox.tolist(),
+                                "confidence": best_green_conf,
+                            })
+                            det = sv.Detections(
+                                xyxy=np.array([best_green_bbox]),
+                                confidence=np.array([best_green_conf]),
+                                tracker_id=np.array([best_green_tid]),
+                            )
+                            frame = _draw_dot_trail(frame,
+                                trail_positions[-TRACE_LENGTH:])
+                            frame = box_annotator.annotate(frame, det)
+                            frame = label_annotator.annotate(frame, det, labels=["REF"])
+                            ref_found = True
+                            frames_since_ref_seen = 0
+                        else:
+                            ref_track_id = -1  # no green candidate, drop lock
+                        break  # handled this frame
 
                     ref_found = True
                     frames_since_ref_seen = 0
@@ -422,14 +467,17 @@ def track_referee(video_path, output_path, heatmap_path=None, tracking_json_path
                     bw = bbox[2] - bbox[0]
                     if bw > 0 and (bh / bw) < 1.3:
                         continue
-                    s = _score_person(frame, bbox)
+                    # Use primary colour (green) as main signal for re-ID
+                    s = _score_primary(frame, bbox)
+                    if s < PRIMARY_COLOUR_MIN:
+                        continue  # not green enough
                     if s > best_score:
                         best_score = s
                         best_tid = tid
                         best_bbox = bbox
                         best_conf = conf
 
-                if best_score > 0.35 and best_tid is not None:
+                if best_score > PRIMARY_COLOUR_MIN and best_tid is not None:
                     old_id = ref_track_id
                     ref_track_id = best_tid
                     reid_count += 1
