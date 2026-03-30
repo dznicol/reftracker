@@ -19,6 +19,8 @@ wheels/
 *.docx
 *.pptx
 docs/old/
+docs/RefTracker_Status.md
+docs/ref_signals.jpg
 
 # Output artifacts
 output/
