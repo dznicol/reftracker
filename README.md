@@ -11,6 +11,18 @@ AI referee tracking and decision classification for rugby union. Combines local 
 3. **Overlays explanations** onto the video with decision banners and plain-English descriptions
 4. **Generates a heatmap** of referee movement across the pitch
 
+### Referee tracking with bounding box and movement trail
+![Referee tracking](docs/images/tracking.jpg)
+
+### Decision overlay — knock on detected
+![Knock on decision](docs/images/decision_knock_on.jpg)
+
+### Decision overlay — scrum awarded
+![Scrum awarded decision](docs/images/decision_scrum.jpg)
+
+### Referee movement heatmap
+![Heatmap](docs/images/heatmap.png)
+
 ## Architecture
 
 ```
