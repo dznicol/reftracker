@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Secrets
+.env
+
+# Model weights (large binaries, auto-downloaded)
+*.pt
+
+# Documents (internal)
+*.docx
+*.pptx
+docs/old/
+
+# Output artifacts
+output/
+tmp/
+
+# Source videos
+videos/
+
+# Claude memory
+memory/
+
+# OS files
+.DS_Store
+
+# Claude Code local settings
+.claude/

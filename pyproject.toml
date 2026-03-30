@@ -1,0 +1,16 @@
+[project]
+name = "reftracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boxmot>=16.0.11",
+    "google-generativeai>=0.8.6",
+    "lapx>=0.9.4",
+    "numpy>=2.4.3",
+    "opencv-python>=4.13.0.92",
+    "python-dotenv>=1.2.2",
+    "supervision>=0.27.0.post2",
+    "ultralytics>=8.4.27",
+]
