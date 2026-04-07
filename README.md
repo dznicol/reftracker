@@ -47,10 +47,10 @@ Video Input (wide-angle Veo footage)
 
 ## Key design decisions
 
-- **Local CV is the hero, Gemini is enrichment.** The tracking pipeline works without Gemini. Real engineering is in the CV pipeline, not API calls.
-- **$0 total cost.** YOLOv8, OpenCV, Supervision, BoTSORT are free/open-source. Gemini free tier gives 250 requests/day.
-- **Wide-angle footage required.** Broadcast highlights don't work because the camera follows the ball. Need an elevated fixed camera like Veo.
-- **CLIP-ReID over OSNet.** CLIP's semantic understanding of appearance outperforms surveillance-trained ReID models for sports footage where kit colour is the key differentiator.
+- Local vision processing performs the primary analysis. Gemini enriches decision moments only. Future work includes splitting video on referee running speed (unlikely to be making a call while running) and improving ReID using additional shirt traits such as the absence of a squad number on the back.
+- Runs entirely on free and open-source tooling. Gemini free tier covers 250 requests/day which is more than enough for match analysis.
+- Requires wide-angle fixed camera footage. Broadcast footage is unlikely to work - the camera follows the ball, not the referee. An elevated fixed camera like Veo is ideal.
+- Chose CLIP-ReID over OSNet. Surveillance-trained ReID models struggle with sports footage where kit colour is the primary differentiator. CLIP's broader semantic understanding of appearance handles this better.
 
 ## Tracking approach
 
