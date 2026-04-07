@@ -18,7 +18,7 @@ The core tech that finds and follows the referee in video footage.
 | Track Lock | When the system is confidently following the referee's track ID frame-to-frame. Track lock is lost when the tracker reassigns the ref a new ID (due to occlusion, detection dropout, etc.). |
 | Re-ID | Re-identification. When track lock is lost, the system scores all nearby people by colour to find the ref again and lock onto their new track ID. |
 | Proximity Gate | During re-ID, we only consider candidates within a search radius of where we last saw the ref. A person can only run so far in a few frames, so this prevents locking onto the linesman on the far side of the pitch. |
-| mAP | Mean Average Precision — the standard accuracy metric for object detection. YOLOv8n scores 37.3% on COCO; for person detection in sports video, even 37% is more than adequate. |
+| mAP | Mean Average Precision — the standard accuracy metric for object detection. YOLOv8n scores 37.3 mAP@50-95 on COCO (published by Ultralytics) — but that's a harsh average across all 80 object classes and strict overlap thresholds. It does not mean "37% success rate." The "person" class is one of COCO's strongest, and in our scenario (prominent, well-lit referee on an open pitch) real-world detection is very reliable. |
 
 ## Colour Detection
 
