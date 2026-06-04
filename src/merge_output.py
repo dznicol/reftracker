@@ -40,7 +40,8 @@ def _disc_positions(tracking_json, max_gap):
 
 def merge_decisions_onto_video(video_path, decisions_path, output_path,
                                display_duration=5.0, tracking_json=None,
-                               max_gap=14, follow=False, follow_size=(760, 620)):
+                               max_gap=14, follow=False, follow_size=(760, 620),
+                               follow_zoom=1.0):
     """
     Overlay decision banners (and optionally the ref disc) onto a video.
 
@@ -114,9 +115,10 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
         ker = np.ones(k) / k
         cam_cx = np.convolve(cam_cx, ker, "same")
         cam_cy = np.convolve(cam_cy, ker, "same")
-        # CONSTANT zoom (median ref height) — no per-frame zoom flicker
+        # CONSTANT zoom (median ref height x 8 x follow_zoom) — higher follow_zoom
+        # = wider view (more context, ref smaller). No per-frame zoom flicker.
         med_bh = float(np.median([disc[f][3] - disc[f][1] for f in kf]))
-        win_h = int(min(max(med_bh * 8, 360), min(height, 680)))
+        win_h = int(np.clip(med_bh * 8 * follow_zoom, 320, height))
         win_w = min(width, int(win_h * ow / oh))
 
     frame_idx = 0
@@ -273,12 +275,15 @@ def main():
     parser.add_argument("--follow", action="store_true",
                         help="Render a ref-centred zoom (follow-cam) instead of the full field — "
                              "more watchable when the ref is small. Needs --tracking-json.")
+    parser.add_argument("--follow-zoom", type=float, default=1.0,
+                        help="Follow-cam zoom: >1 = WIDER (more context, ref smaller), "
+                             "<1 = tighter. (default 1.0)")
     args = parser.parse_args()
 
     output = args.output or str(Path(args.video).stem) + "_final.mp4"
     merge_decisions_onto_video(args.video, args.decisions, output, args.duration,
                                tracking_json=args.tracking_json, max_gap=args.max_gap,
-                               follow=args.follow)
+                               follow=args.follow, follow_zoom=args.follow_zoom)
 
 
 if __name__ == "__main__":
