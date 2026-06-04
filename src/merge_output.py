@@ -98,7 +98,27 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
     ow, oh = follow_size if follow else (width, height)
     out = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (ow, oh))
 
-    last_center, last_bh = None, 120
+    # ── Pre-compute a SMOOTH follow-cam path (avoids per-frame jitter/zoom) ──
+    cam_cx = cam_cy = None
+    win_w = win_h = 0
+    if follow and disc:
+        kf = sorted(disc)
+        kx = [(disc[f][0] + disc[f][2]) / 2 for f in kf]
+        ky = [(disc[f][1] + disc[f][3]) / 2 for f in kf]
+        allf = np.arange(total_frames)
+        # glide the CAMERA across all frames (incl. long occlusions); the DISC
+        # is still only drawn where it exists, so honesty is unaffected.
+        cam_cx = np.interp(allf, kf, kx)
+        cam_cy = np.interp(allf, kf, ky)
+        k = max(3, int(fps * 0.8) | 1)            # ~0.8s moving-average, odd
+        ker = np.ones(k) / k
+        cam_cx = np.convolve(cam_cx, ker, "same")
+        cam_cy = np.convolve(cam_cy, ker, "same")
+        # CONSTANT zoom (median ref height) — no per-frame zoom flicker
+        med_bh = float(np.median([disc[f][3] - disc[f][1] for f in kf]))
+        win_h = int(min(max(med_bh * 8, 360), min(height, 680)))
+        win_w = min(width, int(win_h * ow / oh))
+
     frame_idx = 0
     while True:
         ret, frame = cap.read()
@@ -111,14 +131,11 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
                 xyxy=np.array([bb]), confidence=np.array([1.0]), tracker_id=np.array([0]))
             frame = ell.annotate(frame, det)
             frame = lab.annotate(frame, det, labels=["REF"])
-            last_center = (int((bb[0] + bb[2]) / 2), int((bb[1] + bb[3]) / 2))
-            last_bh = max(40, bb[3] - bb[1])
 
-        if follow:
-            cx, cy = last_center or (width // 2, height // 2)
-            win_h = int(min(max(last_bh * 8, 340), 680)); win_w = int(win_h * ow / oh)
-            x1 = int(np.clip(cx - win_w // 2, 0, max(0, width - win_w)))
-            y1 = int(np.clip(cy - int(0.12 * win_h) - win_h // 2, 0, max(0, height - win_h)))
+        if follow and cam_cx is not None:
+            cx, cy = cam_cx[frame_idx], cam_cy[frame_idx]
+            x1 = int(np.clip(cx - win_w / 2, 0, max(0, width - win_w)))
+            y1 = int(np.clip(cy - 0.12 * win_h - win_h / 2, 0, max(0, height - win_h)))
             crop = frame[y1:y1 + win_h, x1:x1 + win_w]
             if crop.size:
                 frame = cv2.resize(crop, (ow, oh), interpolation=cv2.INTER_CUBIC)
