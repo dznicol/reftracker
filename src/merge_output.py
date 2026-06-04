@@ -20,85 +20,117 @@ import cv2
 import numpy as np
 
 
-def merge_decisions_onto_video(video_path, decisions_path, output_path, display_duration=5.0):
-    """
-    Overlay decision labels onto the tracked video at the appropriate timestamps.
+def _disc_positions(tracking_json, max_gap):
+    """Per-frame ref bbox from a tracking JSON. Uses only REAL detections
+    (interpolated==False, or all if the flag is absent) and bridges gaps of up
+    to `max_gap` frames — so genuine occlusions (longer gaps) show NO disc."""
+    js = json.load(open(tracking_json))
+    real = {p["frame"]: p["bbox"] for p in js["positions"]
+            if not p.get("interpolated", False)}
+    disc = dict(real)
+    fr = sorted(real)
+    for a, c in zip(fr, fr[1:]):
+        if 1 < c - a <= max_gap:
+            ba, bc = real[a], real[c]
+            for f in range(a + 1, c):
+                t = (f - a) / (c - a)
+                disc[f] = [ba[i] + t * (bc[i] - ba[i]) for i in range(4)]
+    return disc
 
-    Each decision appears as a text banner for `display_duration` seconds.
+
+def merge_decisions_onto_video(video_path, decisions_path, output_path,
+                               display_duration=5.0, tracking_json=None,
+                               max_gap=14, follow=False, follow_size=(760, 620)):
+    """
+    Overlay decision banners (and optionally the ref disc) onto a video.
+
+    - tracking_json: if given, draw the underfoot disc from it (raw clip in,
+      finished clip out — one command). Genuine occlusions show no disc.
+    - follow: render a ref-centred zoom ("follow-cam") instead of the full field.
     """
     video_path = Path(video_path)
-    decisions_path = Path(decisions_path)
     output_path = Path(output_path)
 
-    # Load decisions
-    with open(decisions_path) as f:
-        data = json.load(f)
+    data = json.load(open(decisions_path))
     decisions = data.get("decisions", [])
 
-    # Parse decision timestamps into frame numbers
     cap = cv2.VideoCapture(str(video_path))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Convert timestamp strings to frame numbers
     timed_decisions = []
     for d in decisions:
         if d.get("decision_type") == "play_on":
             continue
-
-        ts = d.get("timestamp_approx", "0:00")
+        ts = d.get("timestamp_approx") or d.get("timestamp") or "0:00"  # accept both formats
         offset = d.get("segment_offset_seconds", 0)
-
-        # Parse "M:SS" format
         try:
-            parts = ts.replace(".", ":").split(":")
-            if len(parts) == 2:
-                seconds = int(parts[0]) * 60 + int(parts[1])
-            elif len(parts) == 1:
-                seconds = int(parts[0])
-            else:
-                seconds = 0
+            parts = str(ts).replace(".", ":").split(":")
+            seconds = int(parts[0]) * 60 + int(parts[1]) if len(parts) == 2 else int(parts[0])
         except (ValueError, IndexError):
             seconds = 0
-
-        total_seconds = seconds + offset
-        start_frame = int(total_seconds * fps)
-        end_frame = int((total_seconds + display_duration) * fps)
-
+        start_frame = int((seconds + offset) * fps)
         timed_decisions.append({
             "start_frame": start_frame,
-            "end_frame": min(end_frame, total_frames),
+            "end_frame": min(int((seconds + offset + display_duration) * fps), total_frames),
             "type": d.get("decision_type", "unknown").replace("_", " ").title(),
-            "explanation": d.get("explanation", ""),
+            "explanation": d.get("explanation") or d.get("note", ""),
             "team_against": d.get("team_penalised", ""),
             "team_for": d.get("team_benefiting", ""),
         })
+    print(f"Overlaying {len(timed_decisions)} decisions"
+          + (f" + disc (gap<={max_gap}f)" if tracking_json else "")
+          + (" as FOLLOW-CAM" if follow else "") + "...")
 
-    print(f"Overlaying {len(timed_decisions)} decisions onto video...")
+    disc, ell, lab = {}, None, None
+    if tracking_json:
+        import supervision as sv
+        disc = _disc_positions(tracking_json, max_gap)
+        ell = sv.EllipseAnnotator(thickness=3, color=sv.Color.from_hex("#00FF00"),
+                                  color_lookup=sv.ColorLookup.INDEX)
+        lab = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_color=sv.Color.WHITE,
+                                text_position=sv.Position.BOTTOM_CENTER,
+                                color=sv.Color.from_hex("#00FF00"), color_lookup=sv.ColorLookup.INDEX)
 
-    # Setup output
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+    ow, oh = follow_size if follow else (width, height)
+    out = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (ow, oh))
 
+    last_center, last_bh = None, 120
     frame_idx = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+        # draw disc on the FULL frame (so it stays aligned with the ref after any crop)
+        if frame_idx in disc:
+            bb = disc[frame_idx]
+            det = sv.Detections(
+                xyxy=np.array([bb]), confidence=np.array([1.0]), tracker_id=np.array([0]))
+            frame = ell.annotate(frame, det)
+            frame = lab.annotate(frame, det, labels=["REF"])
+            last_center = (int((bb[0] + bb[2]) / 2), int((bb[1] + bb[3]) / 2))
+            last_bh = max(40, bb[3] - bb[1])
 
-        # Show only the latest active decision (avoids ghost text overlap)
+        if follow:
+            cx, cy = last_center or (width // 2, height // 2)
+            win_h = int(min(max(last_bh * 8, 340), 680)); win_w = int(win_h * ow / oh)
+            x1 = int(np.clip(cx - win_w // 2, 0, max(0, width - win_w)))
+            y1 = int(np.clip(cy - int(0.12 * win_h) - win_h // 2, 0, max(0, height - win_h)))
+            crop = frame[y1:y1 + win_h, x1:x1 + win_w]
+            if crop.size:
+                frame = cv2.resize(crop, (ow, oh), interpolation=cv2.INTER_CUBIC)
+
         active = [d for d in timed_decisions
                   if d["start_frame"] <= frame_idx <= d["end_frame"]]
         if active:
-            frame = draw_decision_banner(frame, active[-1], width, height)
+            frame = draw_decision_banner(frame, active[-1], ow, oh)
 
         out.write(frame)
         frame_idx += 1
-
-        if frame_idx % 200 == 0:
+        if frame_idx % 300 == 0:
             print(f"  Frame {frame_idx}/{total_frames}")
 
     cap.release()
@@ -161,8 +193,14 @@ def draw_decision_banner(frame, decision, width, height):
     else:
         top_text = type_text
 
-    cv2.putText(frame, top_text, (15, 45),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+    # Shrink the title font so it never overflows the frame width (matters on
+    # the narrower follow-cam render).
+    ts = 1.0
+    (tw, _), _ = cv2.getTextSize(top_text, cv2.FONT_HERSHEY_SIMPLEX, ts, 2)
+    if tw > width - 30:
+        ts = max(0.45, ts * (width - 30) / tw)
+    cv2.putText(frame, top_text, (15, 42),
+                cv2.FONT_HERSHEY_SIMPLEX, ts, (255, 255, 255), 2)
 
     # Explanation — bottom banner, wrapped to up to 2 lines so it never
     # bleeds off the right edge.
@@ -203,17 +241,27 @@ def get_decision_color(decision_type):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Merge decisions onto tracked video")
-    parser.add_argument("video", help="Tracked video from track_ref.py")
-    parser.add_argument("decisions", help="Decisions JSON from classify_decisions.py")
+    parser = argparse.ArgumentParser(description="Merge decisions (and disc) onto a video")
+    parser.add_argument("video", help="Tracked video, OR the raw clip if --tracking-json is given")
+    parser.add_argument("decisions", help="Decisions JSON (classify_decisions or ground-truth format)")
     parser.add_argument("--output", "-o", default=None, help="Output video path")
-    parser.add_argument("--duration", type=float, default=5.0,
-                        help="How long each decision label stays on screen (seconds)")
+    parser.add_argument("--duration", type=float, default=6.0,
+                        help="How long each decision banner stays on screen (seconds)")
+    parser.add_argument("--tracking-json", default=None,
+                        help="Draw the ref disc from this tracking JSON (e.g. track_ref_colour.py "
+                             "output) onto the RAW clip — one-command finished render.")
+    parser.add_argument("--max-gap", type=int, default=14,
+                        help="Bridge disc gaps up to N frames; longer = true occlusion, no disc "
+                             "(default 14 ≈ 0.5s)")
+    parser.add_argument("--follow", action="store_true",
+                        help="Render a ref-centred zoom (follow-cam) instead of the full field — "
+                             "more watchable when the ref is small. Needs --tracking-json.")
     args = parser.parse_args()
 
     output = args.output or str(Path(args.video).stem) + "_final.mp4"
-
-    merge_decisions_onto_video(args.video, args.decisions, output, args.duration)
+    merge_decisions_onto_video(args.video, args.decisions, output, args.duration,
+                               tracking_json=args.tracking_json, max_gap=args.max_gap,
+                               follow=args.follow)
 
 
 if __name__ == "__main__":
