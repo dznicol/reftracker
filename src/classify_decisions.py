@@ -54,15 +54,23 @@ Decisions often come in a SEQUENCE of two signals:
 Example sequence for a knock forward:
   1. Ref blows whistle, stops play
   2. One arm raised with hand bent, moving back and forth = KNOCK FORWARD
-  3. Then both arms raised above head, hands together = SCRUM AWARDED
+  3. Then one arm extended HORIZONTALLY out to the side = SCRUM AWARDED
+     (the horizontal arm points the direction of the put-in)
   Report these as TWO separate decisions at their respective timestamps.
+
+CRITICAL — do not confuse these two, they look different:
+- SCRUM AWARDED: ONE arm extended roughly HORIZONTAL, out to the side, pointing
+  the put-in direction (toward the team awarded the feed). The arm is LOW/level,
+  NOT above the head. Whistle in the other hand. (Both-arms-above-the-head is NOT
+  a scrum signal — do not report a scrum just because an arm is raised high.)
+- PENALTY: ONE arm raised straight and HIGH (upper arm up, around 45-90 degrees),
+  angled TOWARD the non-offending team being awarded the penalty. Whistle in the
+  other hand. A single high, raised arm held up + whistle = PENALTY, not a scrum.
 
 Key signals:
 - KNOCK FORWARD: arm raised, hand/forearm bent, sweeping/rolling forward motion
-- SCRUM AWARDED: both arms raised above head (may start with one arm going up
-  while the other holds the whistle to the mouth, then both arms up)
-- PENALTY: arm extended straight at ~45 degrees TOWARD the team awarded the penalty
-- TRY: arm raised straight up while running to the posts
+- TRY: arm raised straight VERTICAL above the head, usually at/near the goal line
+  while running toward the posts (context: at the try line, not mid-field)
 - ADVANTAGE: arm extended horizontally toward the team gaining advantage, held steady
 - FREE KICK: arm bent at elbow, raised upward
 - NOT ROLLING AWAY: rolling hand gesture near the ground
@@ -77,9 +85,13 @@ For each decision, return a JSON object with:
 - signal_observed: describe EXACTLY what you see the ref doing with arms/hands/body
 - decision_type: one of:
   penalty_awarded, penalty_advantage, scrum_awarded, scrum_reset, scrum_penalty,
-  lineout_call, try_awarded, tmo_review, yellow_card, red_card, knock_on,
-  forward_pass, offside, not_releasing, not_rolling, high_tackle,
+  lineout_call, try_awarded, no_try, held_up, tmo_review, yellow_card, red_card,
+  knock_on, forward_pass, offside, not_releasing, not_rolling, high_tackle,
   ruck_infringement, advantage_over, play_on, conversion, free_kick, kick_off, other
+  NOTE: a try is only AWARDED if the grounding is clear. If the ref raises an arm as
+  if signalling a try but then crosses/waves the arms or inspects and waves it away,
+  that is NO_TRY (or HELD_UP if the defenders held the ball up) — report no_try, NOT
+  try_awarded. Watch for the REVERSAL after an initial raised arm.
 - team_penalised: which team was penalised (by kit colour), or "N/A"
 - team_benefiting: which team benefited, or "N/A"
 - ref_position: "at the breakdown", "5m away", "10m+ away", "far side", "behind play", "touchline"
@@ -93,6 +105,28 @@ If no clear decision signals are visible, return:
 [{"decision_type": "play_on", "explanation": "Open play, no referee decisions.", "confidence": 0.9}]
 
 Return ONLY valid JSON, no markdown formatting or code blocks."""
+
+
+# Prepended to the prompt when the input is a *tracked* video (output of track_ref.py),
+# where the referee has already been located and highlighted. Lets Gemini skip the
+# "find the ref" step and focus entirely on reading the hand signals.
+MARKER_NOTES = {
+    "disc": (
+        "IMPORTANT: The referee has ALREADY been identified for you. In this video the "
+        "referee is highlighted with a bright GREEN ELLIPSE/DISC drawn at their feet and a "
+        "'REF' label, plus a trail of green dots showing where they have been. The person "
+        "with this green disc IS the referee — follow ONLY them. Do not try to find the "
+        "referee yourself; trust the marker. The disc is at the feet and never covers the "
+        "hands, so read the arm/hand signals normally.\n\n"
+    ),
+    "box": (
+        "IMPORTANT: The referee has ALREADY been identified for you. In this video the "
+        "referee is highlighted with a bright GREEN BOUNDING BOX and a 'REF' label, plus a "
+        "trail of green dots showing where they have been. The person inside this green box "
+        "IS the referee — follow ONLY them. Do not try to find the referee yourself; trust "
+        "the marker.\n\n"
+    ),
+}
 
 
 # Signal images to include as visual references for Gemini
@@ -120,7 +154,7 @@ SIGNAL_IMAGES = [
 ]
 
 
-def classify_segment(video_path, model, segment_offset=0.0):
+def classify_segment(video_path, model, segment_offset=0.0, prompt=REFEREE_PROMPT):
     """
     Upload a video segment to Gemini and get referee decision classifications.
 
@@ -128,6 +162,7 @@ def classify_segment(video_path, model, segment_offset=0.0):
         video_path: Path to the video segment
         model: Gemini model instance
         segment_offset: Time offset in seconds (for multi-segment processing)
+        prompt: Instruction prompt to send with the video
 
     Returns:
         List of decision dicts with adjusted timestamps
@@ -160,11 +195,11 @@ def classify_segment(video_path, model, segment_offset=0.0):
 
     # Send to model: video + signal images + prompt
     print(f"  Classifying referee decisions...")
-    content = [video_file] + signal_files + [REFEREE_PROMPT]
+    content = [video_file] + signal_files + [prompt]
     response = model.generate_content(
         content,
         generation_config=genai.GenerationConfig(
-            temperature=0.2,  # Low temperature for consistent classification
+            temperature=0.0,  # Deterministic — reruns are comparable for eval
             max_output_tokens=8192,
         ),
     )
@@ -198,9 +233,17 @@ def classify_segment(video_path, model, segment_offset=0.0):
     return decisions
 
 
-def process_video(video_path, output_path):
+def process_video(video_path, output_path, model_name="gemini-2.5-flash",
+                  ref_marker="none", ref_colour="green"):
     """
     Process a single video file or directory of segments.
+
+    Args:
+        video_path: Video file or directory of segments
+        output_path: Where to write the decisions JSON
+        model_name: Gemini model to use (e.g. "gemini-2.5-flash", "gemini-3-flash")
+        ref_marker: "none" for raw video, or "disc"/"box" when feeding a *tracked*
+            video where the ref is already highlighted (adds a hint to the prompt)
     """
     # Configure Gemini
     api_key = os.environ.get("GOOGLE_API_KEY")
@@ -210,7 +253,17 @@ def process_video(video_path, output_path):
         sys.exit(1)
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
+    print(f"Using model: {model_name}")
+    model = genai.GenerativeModel(model_name)
+
+    # Build the prompt — prepend a marker hint when the input is a tracked video
+    prompt = MARKER_NOTES.get(ref_marker, "") + REFEREE_PROMPT
+    if ref_marker in MARKER_NOTES:
+        print(f"Ref is pre-marked ({ref_marker}) — added marker hint to prompt")
+    # Tell Gemini the ref's actual kit colour (prompt is written for green)
+    if ref_colour and ref_colour.lower() != "green":
+        prompt = prompt.replace("a GREEN shirt", f"a {ref_colour.upper()} shirt")
+        print(f"Ref kit colour set to {ref_colour.upper()} in prompt")
 
     video_path = Path(video_path)
     all_decisions = []
@@ -228,7 +281,8 @@ def process_video(video_path, output_path):
         for i, segment in enumerate(segments):
             offset = i * segment_duration
             print(f"\nSegment {i + 1}/{len(segments)}: {segment.name}")
-            decisions = classify_segment(segment, model, segment_offset=offset)
+            decisions = classify_segment(segment, model, segment_offset=offset,
+                                         prompt=prompt)
             all_decisions.extend(decisions)
 
             # Rate limiting - be nice to free tier
@@ -238,7 +292,7 @@ def process_video(video_path, output_path):
     else:
         # Process single video file
         print(f"Processing: {video_path.name}")
-        all_decisions = classify_segment(video_path, model)
+        all_decisions = classify_segment(video_path, model, prompt=prompt)
 
     # Save results
     output_path = Path(output_path)
@@ -246,7 +300,8 @@ def process_video(video_path, output_path):
 
     result = {
         "source": str(video_path),
-        "model": "gemini-2.5-flash",
+        "model": model_name,
+        "ref_marker": ref_marker,
         "total_decisions": len(all_decisions),
         "decisions": all_decisions,
     }
@@ -283,9 +338,29 @@ def main():
         default="decisions.json",
         help="Output JSON file path (default: decisions.json)"
     )
+    parser.add_argument(
+        "--model", default="gemini-2.5-flash",
+        help="Gemini model name, e.g. gemini-2.5-flash, gemini-3-flash, "
+             "gemini-3.5-flash (default: gemini-2.5-flash). NOTE: the installed "
+             "google-generativeai SDK is deprecated; if a gemini-3.x string 404s, "
+             "the API version it targets may not serve that model yet — migrate to "
+             "the google-genai SDK."
+    )
+    parser.add_argument(
+        "--ref-marker", default="none", choices=["none", "disc", "box"],
+        help="Set to 'disc' or 'box' when the input is a TRACKED video from "
+             "track_ref.py (ref already highlighted). Adds a prompt hint so Gemini "
+             "trusts the marker instead of re-finding the ref. (default: none)"
+    )
+    parser.add_argument(
+        "--ref-colour", default="green",
+        help="Referee kit colour, injected into the prompt (default: green). "
+             "Use e.g. 'cyan' for the Aberdeen match."
+    )
     args = parser.parse_args()
 
-    process_video(args.video, args.output)
+    process_video(args.video, args.output, model_name=args.model,
+                  ref_marker=args.ref_marker, ref_colour=args.ref_colour)
 
 
 if __name__ == "__main__":

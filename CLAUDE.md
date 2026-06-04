@@ -16,15 +16,44 @@ AI referee tracking tool for rugby. Uses YOLOv8 + BoTSORT (CLIP-ReID) + Supervis
 ```bash
 cd ~/sandbox/reftracker
 
-# Track referee
-uv run python src/track_ref.py videos/veo_sample.mp4 --output output/tracked.mp4 --heatmap output/heatmap.png --ref-colour green
+# Track referee  (--marker disc|box|both; disc = TV-style ellipse at the feet, default)
+#   --imgsz 1280   detect small/distant refs in wide shots (slower)
+#   --ref-start X,Y  seed the ref by location when colour auto-ID is ambiguous
+#   --hold-frames 15  hold the disc through brief occlusions;  --trail  re-enable dot trail
+uv run python src/track_ref.py videos/veo_sample.mp4 --output output/tracked.mp4 --heatmap output/heatmap.png --ref-colour green --marker disc
+
+# Track referee — COLOUR-FIRST (no BoTSORT): use when the ref's shirt colour is
+# UNIQUE (no player wears it). Detects that colour every frame + interpolates gaps.
+# More robust than track_ref.py for colour-unique refs (no MOT identity drift).
+uv run python src/track_ref_colour.py videos/clip.mp4 --output output/tracked.mp4 --hue 75 99 --imgsz 1280
 
 # Classify decisions with Gemini
+#   --model       pick the Gemini model (e.g. gemini-3-flash, gemini-3.5-flash)
+#   --ref-marker  set disc/box when feeding the TRACKED video (ref pre-highlighted)
 uv run python src/classify_decisions.py videos/veo_sample.mp4 --output output/decisions.json
+# Experiment: feed the tracked video so Gemini doesn't have to re-find the ref
+uv run python src/classify_decisions.py output/tracked.mp4 --output output/decisions_marked.json --ref-marker disc --model gemini-3.5-flash
 
 # Merge decisions onto tracked video
 uv run python src/merge_output.py output/tracked.mp4 output/decisions.json --output output/final.mp4
 ```
+
+## Evaluation (measure changes instead of eyeballing)
+```bash
+# Tracking accuracy: extract labelled stills, fill `correct` (1/0) in the CSV, score
+uv run python src/evaluate.py tracking-template output/tracked.mp4 --frames 40
+uv run python src/evaluate.py score-tracking output/eval/tracking_labels.csv
+
+# Decision accuracy: write a ground-truth stub, fill in the REAL decisions, score
+uv run python src/evaluate.py decisions-template
+uv run python src/evaluate.py score-decisions output/decisions.json output/eval/decisions_truth.json --tolerance 3
+```
+
+## Model / SDK note
+The installed `google-generativeai` SDK is **deprecated** but still works. Verified
+2026-05-30: `gemini-3.5-flash` works on it (GA) — no migration needed for the bump.
+Gotchas: `gemini-3-flash` 404s (use `gemini-3-flash-preview`); `gemini-2.5-flash`
+still works. Migrating to `google-genai` is optional housekeeping, not urgent.
 
 ## Key notes
 - Needs `GOOGLE_API_KEY` in `.env` at project root for Gemini

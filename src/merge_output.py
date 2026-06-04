@@ -106,6 +106,37 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path, display_
     print(f"Final video saved: {output_path}")
 
 
+def _wrap_text(text, font, scale, thickness, max_width, max_lines=2):
+    """Greedily wrap `text` into <= max_lines that each fit within max_width px.
+    If it still overflows, the last line is ellipsised."""
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        trial = f"{cur} {w}".strip()
+        (tw, _), _ = cv2.getTextSize(trial, font, scale, thickness)
+        if tw <= max_width or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+            if len(lines) == max_lines:      # no room for another full line
+                break
+    if len(lines) < max_lines and cur:
+        lines.append(cur)
+        cur = ""
+    if cur:  # leftover didn't fit — ellipsise the final line
+        last = lines[-1] if lines else ""
+        while " " in last:
+            cand = last + " ..."
+            (tw, _), _ = cv2.getTextSize(cand, font, scale, thickness)
+            if tw <= max_width:
+                break
+            last = last.rsplit(" ", 1)[0]
+        if lines:
+            lines[-1] = last + " ..."
+    return lines
+
+
 def draw_decision_banner(frame, decision, width, height):
     """
     Draw banners at top and bottom of frame with decision info.
@@ -133,14 +164,21 @@ def draw_decision_banner(frame, decision, width, height):
     cv2.putText(frame, top_text, (15, 45),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
 
-    # Explanation — bottom banner, fully opaque
+    # Explanation — bottom banner, wrapped to up to 2 lines so it never
+    # bleeds off the right edge.
     if decision["explanation"] and len(decision["explanation"]) > 10:
-        exp_text = decision["explanation"]
-        exp_banner_height = 55
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale, thick = 0.6, 1
+        margin = 15
+        line_h = 26
+        lines = _wrap_text(decision["explanation"], font, scale, thick,
+                           width - 2 * margin, max_lines=2)
+        exp_banner_height = line_h * len(lines) + 18
         exp_banner_y = height - exp_banner_height
         cv2.rectangle(frame, (0, exp_banner_y), (width, height), (0, 0, 0), -1)
-        cv2.putText(frame, exp_text, (15, height - 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        for i, line in enumerate(lines):
+            y = exp_banner_y + 20 + i * line_h
+            cv2.putText(frame, line, (margin, y), font, scale, (255, 255, 255), thick)
 
     return frame
 
