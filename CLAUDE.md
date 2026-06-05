@@ -4,9 +4,12 @@ AI referee tracking tool for rugby. Uses YOLOv8 + BoTSORT (CLIP-ReID) + Supervis
 
 ## Project structure
 - `src/` — Python source code
-  - `track_ref.py` — core tracking pipeline (YOLOv8 + BoTSORT + colour verification)
+  - `track_ref_colour.py` — COLOUR-FIRST tracker (recommended for colour-unique refs; no BoTSORT)
+  - `track_ref.py` — BoTSORT tracker (fallback) + auto-calibrated tight kit colour
   - `classify_decisions.py` — Gemini decision classification with signal reference images
-  - `merge_output.py` — overlay decisions onto tracked video
+  - `merge_output.py` — overlay disc (from tracking JSON) + decision banners; `--follow` follow-cam
+  - `evaluate.py` — score tracking + decisions (detection-vs-classification split, FP traps)
+  - `detect_whistle.py` — non-ML whistle detector (two-pass Step-2 trigger; needs audio)
 - `signals/` — 52 official World Rugby referee signal reference images
 - `docs/` — glossary and documentation
 - `output/` — generated outputs (not committed)
@@ -34,8 +37,12 @@ uv run python src/classify_decisions.py videos/veo_sample.mp4 --output output/de
 # Experiment: feed the tracked video so Gemini doesn't have to re-find the ref
 uv run python src/classify_decisions.py output/tracked.mp4 --output output/decisions_marked.json --ref-marker disc --model gemini-3.5-flash
 
-# Merge decisions onto tracked video
+# Finished render: disc (from tracking JSON) + decision banners onto the RAW clip.
+#   --tracking-json  draw the disc from a track JSON (e.g. track_ref_colour output)
+#   --follow [--follow-zoom 1.4]  smooth ref-centred follow-cam (zoom >1 = wider)
+#   --max-gap N      bridge only short gaps; true occlusion shows no disc
 uv run python src/merge_output.py output/tracked.mp4 output/decisions.json --output output/final.mp4
+uv run python src/merge_output.py videos/clip.mp4 output/decisions.json --tracking-json output/tracked.json --follow --output output/final_follow.mp4
 ```
 
 ## Evaluation (measure changes instead of eyeballing)
