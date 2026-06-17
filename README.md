@@ -4,6 +4,10 @@ AI referee tracking and decision classification for rugby union. Combines local 
 
 **The pitch:** "I love watching rugby but half the time I don't understand why the ref blew the whistle. So I built a tool that watches the ref and explains what they're doing."
 
+![Follow-cam demo — an underfoot disc stays locked to the referee while a banner names and explains each decision](docs/images/follow_demo.gif)
+
+*Smooth ref-centred follow-cam: the disc stays locked to the referee through open play, and a banner names and explains each call. (Decision labels shown are verified — see [accuracy](#current-accuracy--findings).)*
+
 ## What it does
 
 1. **Tracks the referee** in wide-angle match footage — two approaches: a **colour-first** single-object tracker (recommended when the ref's kit colour is unique — most cases) and a YOLOv8 + BoTSORT + CLIP-ReID tracker (fallback). Both auto-calibrate the ref's exact kit colour.
@@ -12,13 +16,22 @@ AI referee tracking and decision classification for rugby union. Combines local 
 4. **Measures itself** — an eval harness scores tracking and decisions (with a detection-vs-classification split) so changes are measured, not eyeballed.
 5. **Generates a heatmap** of referee movement (valid only on fixed, non-panning footage).
 
-### Referee tracking with the underfoot disc marker
+### Referee tracking — colour-first underfoot disc
+The disc stays on the referee (teal kit) even amongst similarly-coloured players, in a wide-angle shot where he is only ~40px tall.
 ![Referee tracking](docs/images/tracking.jpg)
 
-### Decision overlay — kick-off detected
-![Kick-off decision](docs/images/decision_kickoff.jpg)
+### Decision classification against the official signals
+Short ref-centred zoom clips are sent to Gemini together with the official World Rugby hand-signal references (the full set lives in [`signals/`](signals/)). Many calls differ by a single detail — a **penalty** is a straight raised arm, a **free kick** a bent one:
 
-### Referee movement heatmap
+![Penalty vs free-kick referee signals](docs/images/signals_pen_fk.png)
+
+The finished render then names and explains each call:
+
+![Decision banner — finished render](docs/images/decision_freekick.jpg)
+
+*Finished render with verified labels. This call is a **free kick** (bent, right-angled arm); the classifier mislabelled it a penalty — that straight-vs-bent-arm distinction is below the resolution floor at ~40px. See [accuracy](#current-accuracy--findings).*
+
+### Referee movement heatmap (fixed-camera footage only)
 ![Heatmap](docs/images/heatmap.png)
 
 ## Architecture
