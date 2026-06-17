@@ -41,6 +41,7 @@ uv run python src/classify_decisions.py output/tracked.mp4 --output output/decis
 #   --tracking-json  draw the disc from a track JSON (e.g. track_ref_colour output)
 #   --follow [--follow-zoom 1.4]  smooth ref-centred follow-cam (zoom >1 = wider)
 #   --max-gap N      bridge only short gaps; true occlusion shows no disc
+#   --banner-offset N  delay banners N seconds after classified timestamp (aligns overlay with visible signal)
 uv run python src/merge_output.py output/tracked.mp4 output/decisions.json --output output/final.mp4
 uv run python src/merge_output.py videos/clip.mp4 output/decisions.json --tracking-json output/tracked.json --follow --output output/final_follow.mp4
 ```

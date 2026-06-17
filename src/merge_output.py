@@ -41,7 +41,7 @@ def _disc_positions(tracking_json, max_gap):
 def merge_decisions_onto_video(video_path, decisions_path, output_path,
                                display_duration=5.0, tracking_json=None,
                                max_gap=14, follow=False, follow_size=(760, 620),
-                               follow_zoom=1.0):
+                               follow_zoom=1.0, banner_offset=0.0):
     """
     Overlay decision banners (and optionally the ref disc) onto a video.
 
@@ -72,10 +72,10 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
             seconds = int(parts[0]) * 60 + int(parts[1]) if len(parts) == 2 else int(parts[0])
         except (ValueError, IndexError):
             seconds = 0
-        start_frame = int((seconds + offset) * fps)
+        start_frame = int((seconds + offset + banner_offset) * fps)
         timed_decisions.append({
             "start_frame": start_frame,
-            "end_frame": min(int((seconds + offset + display_duration) * fps), total_frames),
+            "end_frame": min(int((seconds + offset + banner_offset + display_duration) * fps), total_frames),
             "type": d.get("decision_type", "unknown").replace("_", " ").title(),
             "explanation": d.get("explanation") or d.get("note", ""),
             "team_against": d.get("team_penalised", ""),
@@ -278,12 +278,17 @@ def main():
     parser.add_argument("--follow-zoom", type=float, default=1.0,
                         help="Follow-cam zoom: >1 = WIDER (more context, ref smaller), "
                              "<1 = tighter. (default 1.0)")
+    parser.add_argument("--banner-offset", type=float, default=0.0,
+                        help="Delay banners by N seconds after the classified timestamp — "
+                             "useful when the classifier timestamps the whistle but you want "
+                             "the overlay to appear once the signal is visible (default 0)")
     args = parser.parse_args()
 
     output = args.output or str(Path(args.video).stem) + "_final.mp4"
     merge_decisions_onto_video(args.video, args.decisions, output, args.duration,
                                tracking_json=args.tracking_json, max_gap=args.max_gap,
-                               follow=args.follow, follow_zoom=args.follow_zoom)
+                               follow=args.follow, follow_zoom=args.follow_zoom,
+                               banner_offset=args.banner_offset)
 
 
 if __name__ == "__main__":
