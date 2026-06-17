@@ -38,7 +38,7 @@ Short ref-centred zoom clips are sent to **Gemini 3.5 Flash** together with the 
 The finished render names and explains each call:
 
 <p align="center">
-  <img src="docs/images/decision_freekick.jpg" alt="Decision banner — finished render showing a free kick call" />
+  <img src="docs/images/decision_freekick.gif" alt="Decision banner — finished render showing a free kick call" />
 </p>
 
 *Finished render with verified labels. This call is a **free kick** (bent, right-angled arm); the classifier mislabelled it a penalty — that straight-vs-bent-arm distinction is below the resolution floor at ~40px. See [accuracy](#current-accuracy--findings).*
