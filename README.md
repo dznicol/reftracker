@@ -4,9 +4,11 @@ AI referee tracking and decision classification for rugby union. Combines local 
 
 **The pitch:** "I love watching rugby but half the time I don't understand why the ref blew the whistle. So I built a tool that watches the ref and explains what they're doing."
 
-![Follow-cam demo — an underfoot disc stays locked to the referee while a banner names and explains each decision](docs/images/follow_demo.gif)
+<p align="center">
+  <img src="docs/images/follow_demo.gif" alt="Follow-cam: disc locked to the cyan-kitted referee with decision banner" />
+</p>
 
-*Smooth ref-centred follow-cam: the disc stays locked to the referee through open play, and a banner names and explains each call. (Decision labels shown are verified — see [accuracy](#current-accuracy--findings).)*
+*Smooth ref-centred follow-cam: the disc stays locked to the **cyan-kitted referee** through open play, and a banner names and explains each call. (Decision labels are verified — see [accuracy](#current-accuracy--findings).)*
 
 ## What it does
 
@@ -14,25 +16,32 @@ AI referee tracking and decision classification for rugby union. Combines local 
 2. **Classifies decisions** by sending *ref-centred zoom* clips to Gemini with official World Rugby signal reference images — penalties, try / no-try (including the signalled-then-reversed "held up"), free kicks, etc.
 3. **Overlays** an underfoot disc marker + decision banners onto the video, with an optional ref-centred **follow-cam**.
 4. **Measures itself** — an eval harness scores tracking and decisions (with a detection-vs-classification split) so changes are measured, not eyeballed.
-5. **Generates a heatmap** of referee movement (valid only on fixed, non-panning footage).
 
 ### Referee tracking — colour-first underfoot disc
-The disc stays on the referee (teal kit) even amongst similarly-coloured players, in a wide-angle shot where he is only ~40px tall.
-![Referee tracking](docs/images/tracking.jpg)
+
+The **cyan-kitted referee** is ~40 pixels tall in the original 1920×1080 Veo footage. The three panels below show the same 8-second sequence at the full wide view, a match-area zoom, and a close-up — all from a single colour-first tracking pass with no multi-object identity tracker.
+
+<p align="center">
+  <img src="docs/images/tracking_levels.gif" alt="Colour-first tracking at three zoom levels: wide, match, close-up" width="480" />
+</p>
+
+*The disc stays correctly locked to the cyan ref even with similarly-coloured navy and black-kitted players in frame. Genuine occlusions (breakdown piles) correctly show no disc.*
 
 ### Decision classification against the official signals
+
 Short ref-centred zoom clips are sent to Gemini together with the official World Rugby hand-signal references (the full set lives in [`signals/`](signals/)). Many calls differ by a single detail — a **penalty** is a straight raised arm, a **free kick** a bent one:
 
-![Penalty vs free-kick referee signals](docs/images/signals_pen_fk.png)
+<p align="center">
+  <img src="docs/images/signals_pen_fk.png" alt="Penalty (straight arm) vs free kick (bent arm) referee signals" />
+</p>
 
-The finished render then names and explains each call:
+The finished render names and explains each call:
 
-![Decision banner — finished render](docs/images/decision_freekick.jpg)
+<p align="center">
+  <img src="docs/images/decision_freekick.jpg" alt="Decision banner — finished render showing a free kick call" />
+</p>
 
 *Finished render with verified labels. This call is a **free kick** (bent, right-angled arm); the classifier mislabelled it a penalty — that straight-vs-bent-arm distinction is below the resolution floor at ~40px. See [accuracy](#current-accuracy--findings).*
-
-### Referee movement heatmap (fixed-camera footage only)
-![Heatmap](docs/images/heatmap.png)
 
 ## Architecture
 
