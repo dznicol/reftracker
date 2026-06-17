@@ -1,8 +1,8 @@
 # RefTracker
 
-AI referee tracking and decision classification for rugby union. Combines local computer vision with LLM-based decision analysis.
+Tracks the on-field referee in amateur rugby footage, classifies decisions against the official World Rugby signal vocabulary, and produces an annotated video with a structured decision log.
 
-**The pitch:** "I love watching rugby but half the time I don't understand why the ref blew the whistle. So I built a tool that watches the ref and explains what they're doing."
+**Use cases:** post-match analysis for teams (what was called, when, and why), referee development review, and building a structured decision dataset for season-level statistics.
 
 <p align="center">
   <img src="docs/images/follow_demo.gif" alt="Follow-cam: disc locked to the cyan-kitted referee with decision banner" />
@@ -42,6 +42,16 @@ The finished render names and explains each call:
 </p>
 
 *Finished render with verified labels. This call is a **free kick** (bent, right-angled arm); the classifier mislabelled it a penalty — that straight-vs-bent-arm distinction is below the resolution floor at ~40px. See [accuracy](#current-accuracy--findings).*
+
+### Referee movement heatmap
+
+The tracker records referee screen position throughout the match and renders it as a density heatmap — useful for understanding which areas see the most referee attention.
+
+<p align="center">
+  <img src="docs/images/heatmap.png" alt="Referee movement heatmap" />
+</p>
+
+> **Caveat:** this maps *screen* position, not pitch position. On fixed-camera footage (locked tripod) it gives a genuine spatial picture. On auto-panning cameras like Veo, the camera follows play, so screen position doesn't correspond to a fixed pitch location — the heatmap is then misleading and should be disregarded.
 
 ## Architecture
 
@@ -157,9 +167,17 @@ The tracker then auto-tightens to the ref's *actual* shade. For a colour that is
 
 ## Roadmap
 
-- **Two-pass detect→classify** (above): the reviewed design; the remaining engineering is robustly **anchoring an occluded ref** through the breakdown (appearance-ReID / SAM-style segmentation) so the classify-window zoom is reliable at the high-value contested moments.
-- **Player-clustering for team assignment** — the side holding most same-coloured players reveals which team occupies which half.
-- Optional: migrate off the deprecated `google-generativeai` SDK to `google-genai`.
+### Performance analytics
+- **Structured decision log** — export decisions as CSV/JSON with timestamp, type, and team for season-level aggregation: penalty counts, free-kick trends, try/no-try outcomes, patterns per opponent.
+- **Match summary report** — per-team decision breakdown at the end of each run (total penalties against, free kicks awarded, cards).
+- **Pitch-space heatmap** — homography-correct referee position onto a 2D pitch diagram instead of screen coordinates, so the heatmap is valid on panning footage too.
+
+### Tracking & classification
+- **Two-pass detect→classify** (reviewed design): detect decision *moments* first (whistle or play-change cue), then classify only those short windows. The remaining engineering is robustly anchoring an occluded ref through the breakdown — appearance-ReID or SAM-style segmentation.
+- **Player-clustering for team assignment** — the side holding the most same-coloured players reveals which team occupies which half; would make the decision log team attribution automatic.
+
+### Minor
+- Migrate off the deprecated `google-generativeai` SDK to `google-genai`.
 
 ## Tech stack
 
