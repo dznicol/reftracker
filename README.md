@@ -29,7 +29,7 @@ The **cyan-kitted referee** is ~40 pixels tall in the original 1920×1080 Veo fo
 
 ### Decision classification against the official signals
 
-Short ref-centred zoom clips are sent to Gemini together with the official World Rugby hand-signal references (the full set lives in [`signals/`](signals/)). Many calls differ by a single detail — a **penalty** is a straight raised arm, a **free kick** a bent one:
+Short ref-centred zoom clips are sent to **Gemini 3.5 Flash** together with the official World Rugby hand-signal references (the full set lives in [`signals/`](signals/)). Many calls differ by a single detail — a **penalty** is a straight raised arm, a **free kick** a bent one:
 
 <p align="center">
   <img src="docs/images/signals_pen_fk.png" alt="Penalty (straight arm) vs free kick (bent arm) referee signals" />
