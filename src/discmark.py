@@ -45,6 +45,30 @@ def _gauss(x, sigma):
     return np.convolve(np.pad(x, r, mode="edge"), k, "valid")
 
 
+def _repair_feet(fy, hh, fps):
+    """
+    The bbox bottom stops being the ref's feet when he passes behind another
+    player: YOLO either merges the two into one tall box (bottom = THAT
+    player's feet — the disc visibly 'switches' to them) or crops him to his
+    visible torso (bottom = his knees). Both leave a sustained height anomaly
+    that the short despike filter can't catch, so: flag frames whose height
+    strays >18% from a rolling ~4s median and re-interpolate feet_y/height
+    across them like an occlusion gap. cx is left alone — the horizontal
+    position stays good throughout.
+    """
+    n = len(hh)
+    if n < 9:
+        return fy, hh
+    k = min((int(fps * 4)) | 1, n - (1 - n % 2))      # odd, <= segment length
+    base = _medfilt(hh, k)
+    bad = np.abs(hh - base) > 0.18 * base
+    if not bad.any() or bad.all():
+        return fy, hh
+    idx = np.arange(n)
+    good = np.flatnonzero(~bad)
+    return np.interp(idx, good, fy[good]), np.interp(idx, good, hh[good])
+
+
 def smooth_disc_track(bboxes, fps, pos_smooth=0.12, size_smooth=0.7, fade=0.25):
     """
     bboxes: {frame: [x1, y1, x2, y2]}  (gaps allowed — each contiguous run is
@@ -68,11 +92,12 @@ def smooth_disc_track(bboxes, fps, pos_smooth=0.12, size_smooth=0.7, fade=0.25):
     nfade = max(1, int(fps * fade))
     for seg in segs:
         bb = np.array([bboxes[f] for f in seg], np.float64)
+        fy_r, hh_r = _repair_feet(bb[:, 3], bb[:, 3] - bb[:, 1], fps)
         cx = _gauss(_medfilt((bb[:, 0] + bb[:, 2]) / 2, 3), fps * pos_smooth)
-        fy = _gauss(_medfilt(bb[:, 3], 5), fps * pos_smooth)
+        fy = _gauss(_medfilt(fy_r, 5), fps * pos_smooth)
         # size: despike hard + smooth long — bbox height pops 50px when limbs
         # clip in/out, and a pulsing disc is the most visible jitter of all
-        hh = _gauss(_medfilt(bb[:, 3] - bb[:, 1], 9), fps * size_smooth)
+        hh = _gauss(_medfilt(hh_r, 9), fps * size_smooth)
         rx = np.clip(hh * 0.42, 6.0, None)
         for i, f in enumerate(seg):
             a = min(1.0, (i + 1) / nfade, (len(seg) - i) / nfade)
