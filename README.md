@@ -14,7 +14,7 @@ Tracks the on-field referee in amateur rugby footage, classifies decisions again
 
 1. **Tracks the referee** in wide-angle match footage — two approaches: a **colour-first** single-object tracker (recommended when the ref's kit colour is unique — most cases) and a YOLOv8 + BoTSORT + CLIP-ReID tracker (fallback). Both auto-calibrate the ref's exact kit colour.
 2. **Classifies decisions** by sending *ref-centred zoom* clips to Gemini with official World Rugby signal reference images — penalties, try / no-try (including the signalled-then-reversed "held up"), free kicks, etc.
-3. **Overlays** an underfoot disc marker + decision banners onto the video, with an optional ref-centred **follow-cam**.
+3. **Overlays** a broadcast-style underfoot disc + decision banners onto the video, with an optional ref-centred **follow-cam**. The disc is smoothed (zero-lag, offline), sub-pixel rendered, and **occlusion-masked** — YOLOv8n-seg person masks composite it *behind* players, TV-graphics style.
 4. **Measures itself** — an eval harness scores tracking and decisions (with a detection-vs-classification split) so changes are measured, not eyeballed.
 
 ### Referee tracking — colour-first underfoot disc
@@ -75,8 +75,9 @@ Video Input (wide-angle Veo footage; often SILENT — Veo records mic-off by def
     |   +-- 16 official signal images + no_try/held_up vocab + reversal reasoning
     |   +-- Returns timestamped decision JSON
     |
-    +-> merge_output.py (LOCAL - OpenCV)
-    |   +-- Draws the disc (from a tracking JSON) + decision banners
+    +-> merge_output.py (LOCAL - OpenCV + YOLOv8n-seg)
+    |   +-- Draws the smoothed, occlusion-masked disc (from a tracking JSON)
+    |       + decision banners — the disc composites BEHIND players
     |   +-- --follow / --follow-zoom: smooth ref-centred follow-cam render
     |   +-- Output: final annotated .mp4
     |

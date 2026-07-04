@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from discmark import smooth_disc_track, draw_disc, _hex_to_bgr, _gauss
+from discmark import smooth_disc_track, draw_disc, _hex_to_bgr, _gauss, PersonMasker
 
 
 def _disc_positions(tracking_json, max_gap):
@@ -45,7 +45,7 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
                                display_duration=5.0, tracking_json=None,
                                max_gap=14, follow=False, follow_size=(760, 620),
                                follow_zoom=1.0, banner_offset=0.0,
-                               disc_colour="#2EE86E"):
+                               disc_colour="#2EE86E", occlude=True):
     """
     Overlay decision banners (and optionally the ref disc) onto a video.
 
@@ -89,11 +89,14 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
           + (f" + disc (gap<={max_gap}f)" if tracking_json else "")
           + (" as FOLLOW-CAM" if follow else "") + "...")
 
-    disc, track = {}, {}
+    disc, track, masker = {}, {}, None
     if tracking_json:
         disc = _disc_positions(tracking_json, max_gap)
         track = smooth_disc_track(disc, fps)
         disc_bgr = _hex_to_bgr(disc_colour)
+        # occlusion masking = disc composites BEHIND players (broadcast look);
+        # without it, fall back to an open-top arc so the ring skips the legs
+        masker = PersonMasker() if occlude else None
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ow, oh = follow_size if follow else (width, height)
@@ -140,8 +143,10 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
 
         if frame_idx in track:
             cx, fy, rx, a = track[frame_idx]
-            draw_disc(frame, (cx - dx) * sx, (fy - dy) * sy, rx * sx,
-                      colour=disc_bgr, alpha=a)
+            cxd, fyd, rxd = (cx - dx) * sx, (fy - dy) * sy, rx * sx
+            occ = masker.mask(frame, cxd, fyd, rxd) if masker else None
+            draw_disc(frame, cxd, fyd, rxd, colour=disc_bgr, alpha=a,
+                      gap_deg=0 if masker else 80, occlusion=occ)
 
         active = [d for d in timed_decisions
                   if d["start_frame"] <= frame_idx <= d["end_frame"]]
@@ -281,6 +286,9 @@ def main():
                              "<1 = tighter. (default 1.0)")
     parser.add_argument("--disc-colour", default="#2EE86E",
                         help="Disc colour as hex (default #2EE86E broadcast green)")
+    parser.add_argument("--no-occlude", action="store_true",
+                        help="Skip YOLOv8n-seg person masking (disc normally draws "
+                             "BEHIND players); falls back to an open-top arc ring")
     parser.add_argument("--banner-offset", type=float, default=0.0,
                         help="Delay banners by N seconds after the classified timestamp — "
                              "useful when the classifier timestamps the whistle but you want "
@@ -292,7 +300,8 @@ def main():
                                tracking_json=args.tracking_json, max_gap=args.max_gap,
                                follow=args.follow, follow_zoom=args.follow_zoom,
                                banner_offset=args.banner_offset,
-                               disc_colour=args.disc_colour)
+                               disc_colour=args.disc_colour,
+                               occlude=not args.no_occlude)
 
 
 if __name__ == "__main__":

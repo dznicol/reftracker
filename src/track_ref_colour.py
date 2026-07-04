@@ -136,7 +136,7 @@ def main():
             break
         if fi in track:
             cx, fy, rx, a = track[fi]
-            draw_disc(frame, cx, fy, rx, alpha=a)
+            draw_disc(frame, cx, fy, rx, alpha=a, gap_deg=80)
         out.write(frame)
         fi += 1
     cap.release()
