@@ -8,6 +8,7 @@ AI referee tracking tool for rugby. Uses YOLOv8 + BoTSORT (CLIP-ReID) + Supervis
   - `track_ref.py` — BoTSORT tracker (fallback) + auto-calibrated tight kit colour
   - `classify_decisions.py` — Gemini decision classification with signal reference images
   - `merge_output.py` — overlay disc (from tracking JSON) + decision banners; `--follow` follow-cam
+  - `discmark.py` — broadcast-quality disc renderer (offline zero-lag smoothing + sub-pixel AA layered ellipse); used by merge_output + track_ref_colour
   - `evaluate.py` — score tracking + decisions (detection-vs-classification split, FP traps)
   - `detect_whistle.py` — non-ML whistle detector (two-pass Step-2 trigger; needs audio)
 - `signals/` — 52 official World Rugby referee signal reference images
@@ -42,6 +43,7 @@ uv run python src/classify_decisions.py output/tracked.mp4 --output output/decis
 #   --follow [--follow-zoom 1.4]  smooth ref-centred follow-cam (zoom >1 = wider)
 #   --max-gap N      bridge only short gaps; true occlusion shows no disc
 #   --banner-offset N  delay banners N seconds after classified timestamp (aligns overlay with visible signal)
+#   --disc-colour HEX  disc colour (default #2EE86E)
 uv run python src/merge_output.py output/tracked.mp4 output/decisions.json --output output/final.mp4
 uv run python src/merge_output.py videos/clip.mp4 output/decisions.json --tracking-json output/tracked.json --follow --output output/final_follow.mp4
 ```

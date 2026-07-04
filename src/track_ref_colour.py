@@ -20,8 +20,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import supervision as sv
 from ultralytics import YOLO
+
+sys.path.insert(0, str(Path(__file__).parent))
+from discmark import smooth_disc_track, draw_disc
 
 
 def torso_region(frame, box):
@@ -126,22 +128,15 @@ def main():
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     cap = cv2.VideoCapture(args.video)
     out = cv2.VideoWriter(args.output, cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
-    ell = sv.EllipseAnnotator(thickness=3, color=sv.Color.from_hex("#00FF00"),
-                              color_lookup=sv.ColorLookup.INDEX)
-    lab = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_color=sv.Color.WHITE,
-                            text_position=sv.Position.BOTTOM_CENTER,
-                            color=sv.Color.from_hex("#00FF00"), color_lookup=sv.ColorLookup.INDEX)
+    track = smooth_disc_track({f: filled[f][2] for f in filled}, fps)
     fi = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        if fi in filled:
-            _, _, bb = filled[fi]
-            det = sv.Detections(xyxy=np.array([bb]), confidence=np.array([1.0]),
-                                tracker_id=np.array([0]))
-            frame = ell.annotate(frame, det)
-            frame = lab.annotate(frame, det, labels=["REF"])
+        if fi in track:
+            cx, fy, rx, a = track[fi]
+            draw_disc(frame, cx, fy, rx, alpha=a)
         out.write(frame)
         fi += 1
     cap.release()

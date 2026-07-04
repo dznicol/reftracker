@@ -19,6 +19,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).parent))
+from discmark import smooth_disc_track, draw_disc, _hex_to_bgr, _gauss
+
 
 def _disc_positions(tracking_json, max_gap):
     """Per-frame ref bbox from a tracking JSON. Uses only REAL detections
@@ -41,7 +44,8 @@ def _disc_positions(tracking_json, max_gap):
 def merge_decisions_onto_video(video_path, decisions_path, output_path,
                                display_duration=5.0, tracking_json=None,
                                max_gap=14, follow=False, follow_size=(760, 620),
-                               follow_zoom=1.0, banner_offset=0.0):
+                               follow_zoom=1.0, banner_offset=0.0,
+                               disc_colour="#2EE86E"):
     """
     Overlay decision banners (and optionally the ref disc) onto a video.
 
@@ -85,15 +89,11 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
           + (f" + disc (gap<={max_gap}f)" if tracking_json else "")
           + (" as FOLLOW-CAM" if follow else "") + "...")
 
-    disc, ell, lab = {}, None, None
+    disc, track = {}, {}
     if tracking_json:
-        import supervision as sv
         disc = _disc_positions(tracking_json, max_gap)
-        ell = sv.EllipseAnnotator(thickness=3, color=sv.Color.from_hex("#00FF00"),
-                                  color_lookup=sv.ColorLookup.INDEX)
-        lab = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_color=sv.Color.WHITE,
-                                text_position=sv.Position.BOTTOM_CENTER,
-                                color=sv.Color.from_hex("#00FF00"), color_lookup=sv.ColorLookup.INDEX)
+        track = smooth_disc_track(disc, fps)
+        disc_bgr = _hex_to_bgr(disc_colour)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ow, oh = follow_size if follow else (width, height)
@@ -109,12 +109,10 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
         allf = np.arange(total_frames)
         # glide the CAMERA across all frames (incl. long occlusions); the DISC
         # is still only drawn where it exists, so honesty is unaffected.
-        cam_cx = np.interp(allf, kf, kx)
-        cam_cy = np.interp(allf, kf, ky)
-        k = max(3, int(fps * 0.8) | 1)            # ~0.8s moving-average, odd
-        ker = np.ones(k) / k
-        cam_cx = np.convolve(cam_cx, ker, "same")
-        cam_cy = np.convolve(cam_cy, ker, "same")
+        # edge-padded Gaussian (~0.8s): zero-padded convolution used to yank the
+        # camera toward the frame origin over the first/last half-window
+        cam_cx = _gauss(np.interp(allf, kf, kx), fps * 0.35)
+        cam_cy = _gauss(np.interp(allf, kf, ky), fps * 0.35)
         # CONSTANT zoom (median ref height x 8 x follow_zoom) — higher follow_zoom
         # = wider view (more context, ref smaller). No per-frame zoom flicker.
         med_bh = float(np.median([disc[f][3] - disc[f][1] for f in kf]))
@@ -126,14 +124,10 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
         ret, frame = cap.read()
         if not ret:
             break
-        # draw disc on the FULL frame (so it stays aligned with the ref after any crop)
-        if frame_idx in disc:
-            bb = disc[frame_idx]
-            det = sv.Detections(
-                xyxy=np.array([bb]), confidence=np.array([1.0]), tracker_id=np.array([0]))
-            frame = ell.annotate(frame, det)
-            frame = lab.annotate(frame, det, labels=["REF"])
-
+        # crop FIRST, draw the disc after — rendering at output resolution keeps
+        # the ring crisp instead of upscaling chunky full-frame pixels
+        dx = dy = 0.0
+        sx = sy = 1.0
         if follow and cam_cx is not None:
             cx, cy = cam_cx[frame_idx], cam_cy[frame_idx]
             x1 = int(np.clip(cx - win_w / 2, 0, max(0, width - win_w)))
@@ -141,6 +135,13 @@ def merge_decisions_onto_video(video_path, decisions_path, output_path,
             crop = frame[y1:y1 + win_h, x1:x1 + win_w]
             if crop.size:
                 frame = cv2.resize(crop, (ow, oh), interpolation=cv2.INTER_CUBIC)
+                dx, dy = x1, y1
+                sx, sy = ow / crop.shape[1], oh / crop.shape[0]
+
+        if frame_idx in track:
+            cx, fy, rx, a = track[frame_idx]
+            draw_disc(frame, (cx - dx) * sx, (fy - dy) * sy, rx * sx,
+                      colour=disc_bgr, alpha=a)
 
         active = [d for d in timed_decisions
                   if d["start_frame"] <= frame_idx <= d["end_frame"]]
@@ -278,6 +279,8 @@ def main():
     parser.add_argument("--follow-zoom", type=float, default=1.0,
                         help="Follow-cam zoom: >1 = WIDER (more context, ref smaller), "
                              "<1 = tighter. (default 1.0)")
+    parser.add_argument("--disc-colour", default="#2EE86E",
+                        help="Disc colour as hex (default #2EE86E broadcast green)")
     parser.add_argument("--banner-offset", type=float, default=0.0,
                         help="Delay banners by N seconds after the classified timestamp — "
                              "useful when the classifier timestamps the whistle but you want "
@@ -288,7 +291,8 @@ def main():
     merge_decisions_onto_video(args.video, args.decisions, output, args.duration,
                                tracking_json=args.tracking_json, max_gap=args.max_gap,
                                follow=args.follow, follow_zoom=args.follow_zoom,
-                               banner_offset=args.banner_offset)
+                               banner_offset=args.banner_offset,
+                               disc_colour=args.disc_colour)
 
 
 if __name__ == "__main__":
